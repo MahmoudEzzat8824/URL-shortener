@@ -1,5 +1,5 @@
 import os
-from flask import Flask, render_template_string, request, redirect, jsonify
+from flask import Flask, render_template_string, request, redirect, jsonify, send_file
 from redis import Redis, RedisError
 import logging
 
@@ -250,10 +250,10 @@ HTML_TEMPLATE = """
 
 @app.route('/')
 def index():
-    """Serves the main HTML page."""
+    """Serve the external main.html instead of the embedded HTML_TEMPLATE."""
     if not redis_db:
         return "<h1>Error: Redis connection not established.</h1>", 500
-    return render_template_string(HTML_TEMPLATE)
+    return send_file('main.html')
 
 @app.route('/api/create', methods=['POST'])
 def create_short_url():
