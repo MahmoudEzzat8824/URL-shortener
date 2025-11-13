@@ -74,186 +74,14 @@ def is_valid_custom_alias(alias: str) -> (bool, str):
             return False, "Alias contains invalid characters (allowed: 0-9 a-z A-Z - _)"
     return True, ""
 
-# --- HTML & JavaScript Template ---
-HTML_TEMPLATE = """
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>URL Shortener</title>
-    <!-- Load Tailwind CSS from CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        /* Simple loading spinner */
-        .spinner {
-            border: 4px solid rgba(0, 0, 0, .1);
-            border-left-color: #4f46e5; /* Indigo */
-            border-radius: 50%;
-            width: 24px;
-            height: 24px;
-            animation: spin 1s linear infinite;
-        }
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-    </style>
-</head>
-<body class="bg-gray-100 font-sans antialiased">
-    <div class="container mx-auto mt-12 p-4 max-w-xl">
-        <div class="bg-white rounded-lg shadow-xl p-6 md:p-10">
-            
-            <h1 class="text-3xl md:text-4xl font-bold text-center text-indigo-600 mb-6">
-                URL Shortener
-            </h1>
-            
-            <p class="text-center text-gray-600 mb-8">
-                Powered by Python, Flask, and Redis
-            </p>
-
-            <!-- Submission Form -->
-            <form id="shorten-form" class="flex flex-col gap-3">
-                <input
-                    type="url"
-                    id="long-url"
-                    placeholder="Enter a long URL to shorten..."
-                    required
-                    class="p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 transition"
-                />
-                <input
-                    type="text"
-                    id="custom-alias"
-                    placeholder="Custom alias (optional) — letters, numbers, - and _ only"
-                    class="p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 transition"
-                />
-                <button
-                    type="submit"
-                    id="submit-button"
-                    class="bg-indigo-600 text-white font-semibold py-3 px-6 rounded-lg shadow-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition ease-in-out duration-150 flex items-center justify-center"
-                >
-                    <span id="button-text">Shorten</span>
-                    <div id="button-spinner" class="spinner hidden ml-2"></div>
-                </button>
-            </form>
-
-            <!-- Result Display -->
-            <div id="result" class="mt-8 p-4 bg-gray-50 border border-gray-200 rounded-lg shadow-inner hidden">
-                <p class="text-sm font-medium text-gray-700 mb-2">Your shortened URL:</p>
-                <div class="flex flex-col sm:flex-row gap-3">
-                    <!-- We use a read-only input for easy selection -->
-                    <input 
-                        id="short-url-text" 
-                        type="text" 
-                        readonly 
-                        class="flex-grow p-3 bg-white border border-gray-300 rounded-lg text-indigo-700 font-mono focus:outline-none"
-                    />
-                    <button
-                        id="copy-button"
-                        class="bg-gray-600 text-white font-semibold py-3 px-6 rounded-lg hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition ease-in-out duration-150"
-                    >
-                        Copy
-                    </button>
-                </div>
-            </div>
-
-            <!-- Error Display -->
-            <div id="error" class="mt-6 p-4 bg-red-100 border border-red-300 text-red-800 rounded-lg hidden"></div>
-        </div>
-    </div>
-
-    <script>
-        const form = document.getElementById('shorten-form');
-        const longUrlInput = document.getElementById('long-url');
-        const customAliasInput = document.getElementById('custom-alias');
-        const resultDiv = document.getElementById('result');
-        const errorDiv = document.getElementById('error');
-        const shortUrlText = document.getElementById('short-url-text');
-        const copyButton = document.getElementById('copy-button');
-        const submitButton = document.getElementById('submit-button');
-        const buttonText = document.getElementById('button-text');
-        const buttonSpinner = document.getElementById('button-spinner');
-
-        // Handle Form Submission
-        form.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const longUrl = longUrlInput.value.trim();
-            const customAlias = customAliasInput.value.trim();
-
-            // Reset UI
-            resultDiv.classList.add('hidden');
-            errorDiv.classList.add('hidden');
-            errorDiv.innerText = '';
-            submitButton.disabled = true;
-            buttonText.classList.add('hidden');
-            buttonSpinner.classList.remove('hidden');
-
-            try {
-                const payload = { long_url: longUrl };
-                if (customAlias) payload.custom_alias = customAlias;
-
-                const response = await fetch('/api/create', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-
-                const data = await response.json();
-
-                if (response.ok) {
-                    shortUrlText.value = data.short_url;
-                    resultDiv.classList.remove('hidden');
-                    copyButton.innerText = 'Copy';
-                } else {
-                    // Show server-provided error message when available
-                    throw new Error(data.error || 'Something went wrong');
-                }
-
-            } catch (err) {
-                errorDiv.innerText = err.message;
-                errorDiv.classList.remove('hidden');
-            } finally {
-                // Restore button
-                submitButton.disabled = false;
-                buttonText.classList.remove('hidden');
-                buttonSpinner.classList.add('hidden');
-            }
-        });
-
-        // Handle Copy Button
-        copyButton.addEventListener('click', () => {
-            // Select the text in the input
-            shortUrlText.select();
-            shortUrlText.setSelectionRange(0, 99999); // For mobile
-            
-            try {
-                // Use the modern clipboard API if available
-                if (navigator.clipboard) {
-                    navigator.clipboard.writeText(shortUrlText.value).then(() => {
-                        copyButton.innerText = 'Copied!';
-                    });
-                } else {
-                    // Fallback for older browsers
-                    document.execCommand('copy');
-                    copyButton.innerText = 'Copied!';
-                }
-            } catch (err) {
-                console.error('Failed to copy text: ', err);
-                alert('Failed to copy. Please copy manually.');
-            }
-        });
-    </script>
-</body>
-</html>
-"""
-
 # --- Flask Routes ---
 
 @app.route('/')
 def index():
-    """Serve the external main.html instead of the embedded HTML_TEMPLATE."""
+    """Serve the index.html file."""
     if not redis_db:
         return "<h1>Error: Redis connection not established.</h1>", 500
-    return send_file('main.html')
+    return send_file('index.html')
 
 @app.route('/api/create', methods=['POST'])
 def create_short_url():
@@ -333,4 +161,7 @@ def redirect_to_long_url(short_id):
 # --- Run the App ---
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5001, debug=True)
+    # Use PORT environment variable if available (for Heroku, Railway, etc.)
+    port = int(os.environ.get('PORT', 5001))
+    debug = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
+    app.run(host="0.0.0.0", port=port, debug=debug)

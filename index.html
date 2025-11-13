@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>URL Shortener</title>
+
+  <!-- Tailwind CDN for styling -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <style>
+    .spinner {
+      border: 4px solid rgba(0,0,0,.08);
+      border-left-color: #4f46e5;
+      border-radius: 50%;
+      width: 20px;
+      height: 20px;
+      animation: spin 1s linear infinite;
+      display: inline-block;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .hidden { display: none; }
+  </style>
+</head>
+<body class="bg-gray-100 font-sans antialiased">
+  <div class="container mx-auto mt-16 p-4 max-w-2xl">
+    <div class="bg-white rounded-lg shadow-lg p-6">
+      <h1 class="text-3xl font-bold text-indigo-600 text-center mb-4">URL Shortener</h1>
+      <p class="text-center text-gray-600 mb-2">Simple Flask + Redis URL shortener</p>
+      <p id="mode-indicator" class="text-center text-sm text-amber-600 mb-4 hidden">
+        🌐 Demo Mode - URLs stored in browser only
+      </p>
+
+      <form id="shorten-form" class="grid grid-cols-1 gap-3">
+        <input id="long-url" type="url" placeholder="https://example.com/very/long/url" required
+               class="p-3 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"/>
+
+        <input id="custom-alias" type="text" placeholder="Custom alias (optional) — letters, numbers, - and _"
+               class="p-3 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"/>
+
+        <div class="flex items-center gap-3">
+          <button id="submit-button" type="submit"
+                  class="flex items-center gap-2 bg-indigo-600 text-white font-semibold py-2 px-4 rounded hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <span id="button-text">Shorten</span>
+            <span id="button-spinner" class="hidden spinner"></span>
+          </button>
+
+          <button id="clear-button" type="button"
+                  class="ml-auto text-sm text-gray-600 hover:underline focus:outline-none">Clear</button>
+        </div>
+      </form>
+
+      <div id="result" class="mt-6 p-4 bg-gray-50 border border-gray-200 rounded hidden">
+        <p class="text-sm text-gray-700 mb-2">Your shortened URL</p>
+        <div class="flex gap-3 items-center">
+          <input id="short-url-text" type="text" readonly 
+                 class="flex-1 p-2 border border-gray-300 rounded font-mono text-indigo-700 bg-white"/>
+          <button id="copy-button" class="bg-gray-700 text-white px-3 py-2 rounded hover:bg-gray-800">Copy</button>
+        </div>
+      </div>
+
+      <div id="error" class="mt-4 p-3 bg-red-50 text-red-800 border border-red-200 rounded hidden"></div>
+    </div>
+
+    <footer class="text-center mt-8 text-sm text-gray-500">
+      <p>Created by <a href="https://github.com/MahmoudEzzat8824" class="text-indigo-600 hover:underline" target="_blank">Mahmoud Ezzat</a></p>
+    </footer>
+  </div>
+
+  <script>
+    const form = document.getElementById('shorten-form');
+    const longUrlInput = document.getElementById('long-url');
+    const customAliasInput = document.getElementById('custom-alias');
+    const submitButton = document.getElementById('submit-button');
+    const buttonText = document.getElementById('button-text');
+    const buttonSpinner = document.getElementById('button-spinner');
+    const resultDiv = document.getElementById('result');
+    const shortUrlText = document.getElementById('short-url-text');
+    const copyButton = document.getElementById('copy-button');
+    const errorDiv = document.getElementById('error');
+    const clearButton = document.getElementById('clear-button');
+    const modeIndicator = document.getElementById('mode-indicator');
+
+    // Check if we're running with backend or in static mode
+    let isStaticMode = false;
+
+    function showError(msg) {
+      errorDiv.textContent = msg;
+      errorDiv.classList.remove('hidden');
+    }
+    
+    function clearError() {
+      errorDiv.textContent = '';
+      errorDiv.classList.add('hidden');
+    }
+
+    // Simple hash function for demo mode
+    function simpleHash(str) {
+      let hash = 0;
+      for (let i = 0; i < str.length; i++) {
+        const char = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash;
+      }
+      return Math.abs(hash).toString(36).substring(0, 6);
+    }
+
+    // Static mode functions
+    function saveUrlMapping(shortId, longUrl) {
+      try {
+        const urlMap = JSON.parse(localStorage.getItem('urlMap') || '{}');
+        urlMap[shortId] = longUrl;
+        localStorage.setItem('urlMap', JSON.stringify(urlMap));
+      } catch (e) {
+        console.warn('localStorage not available');
+      }
+    }
+
+    function createShortUrlStatic(longUrl, customAlias) {
+      // Validate custom alias if provided
+      if (customAlias) {
+        const validPattern = /^[a-zA-Z0-9_-]+$/;
+        if (!validPattern.test(customAlias)) {
+          throw new Error('Custom alias can only contain letters, numbers, hyphens, and underscores');
+        }
+        if (customAlias.length > 32) {
+          throw new Error('Custom alias must be 32 characters or less');
+        }
+        
+        // Check if alias already exists
+        const urlMap = JSON.parse(localStorage.getItem('urlMap') || '{}');
+        if (urlMap[customAlias]) {
+          throw new Error('Alias already in use');
+        }
+      }
+
+      const shortId = customAlias || simpleHash(longUrl);
+      const baseUrl = window.location.origin + window.location.pathname.replace('index.html', '');
+      const shortUrl = `${baseUrl}${shortId}`;
+      
+      saveUrlMapping(shortId, longUrl);
+      return shortUrl;
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      clearError();
+      resultDiv.classList.add('hidden');
+
+      const longUrl = longUrlInput.value.trim();
+      const customAlias = customAliasInput.value.trim();
+
+      if (!longUrl) {
+        showError('Please enter a URL.');
+        return;
+      }
+
+      // Validate URL format
+      try {
+        new URL(longUrl);
+      } catch (err) {
+        showError('Please enter a valid URL (including http:// or https://)');
+        return;
+      }
+
+      // UI: show spinner
+      submitButton.disabled = true;
+      buttonText.classList.add('hidden');
+      buttonSpinner.classList.remove('hidden');
+
+      try {
+        const payload = { long_url: longUrl };
+        if (customAlias) payload.custom_alias = customAlias;
+
+        // Try backend first
+        const res = await fetch('/api/create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await res.json().catch(()=>({}));
+
+        if (res.ok) {
+          shortUrlText.value = data.short_url || '';
+          resultDiv.classList.remove('hidden');
+          copyButton.textContent = 'Copy';
+          shortUrlText.select();
+          isStaticMode = false;
+        } else {
+          const msg = (data && data.error) ? data.error : (`Request failed (${res.status})`);
+          showError(msg);
+        }
+      } catch (err) {
+        // Backend not available, use static mode
+        isStaticMode = true;
+        modeIndicator.classList.remove('hidden');
+        
+        try {
+          const shortUrl = createShortUrlStatic(longUrl, customAlias);
+          shortUrlText.value = shortUrl;
+          resultDiv.classList.remove('hidden');
+          copyButton.textContent = 'Copy';
+          shortUrlText.select();
+        } catch (staticErr) {
+          showError(staticErr.message);
+        }
+      } finally {
+        submitButton.disabled = false;
+        buttonText.classList.remove('hidden');
+        buttonSpinner.classList.add('hidden');
+      }
+    });
+
+    copyButton.addEventListener('click', async () => {
+      const text = shortUrlText.value;
+      if (!text) return;
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(text);
+        } else {
+          shortUrlText.select();
+          document.execCommand('copy');
+        }
+        copyButton.textContent = 'Copied!';
+        setTimeout(() => {
+          copyButton.textContent = 'Copy';
+        }, 2000);
+      } catch (err) {
+        alert('Failed to copy to clipboard, please copy manually.');
+      }
+    });
+
+    clearButton.addEventListener('click', () => {
+      longUrlInput.value = '';
+      customAliasInput.value = '';
+      shortUrlText.value = '';
+      resultDiv.classList.add('hidden');
+      clearError();
+      copyButton.textContent = 'Copy';
+    });
+
+    // Handle redirect for short URLs (static mode)
+    window.addEventListener('DOMContentLoaded', () => {
+      const path = window.location.pathname;
+      const shortId = path.split('/').filter(p => p && p !== 'index.html').pop();
+      
+      if (shortId) {
+        try {
+          const urlMap = JSON.parse(localStorage.getItem('urlMap') || '{}');
+          const longUrl = urlMap[shortId];
+          
+          if (longUrl) {
+            window.location.href = longUrl;
+          }
+        } catch (e) {
+          console.warn('Could not retrieve URL from localStorage');
+        }
+      }
+    });
+  </script>
+</body>
+</html>
