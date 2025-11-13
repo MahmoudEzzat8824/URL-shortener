@@ -172,13 +172,18 @@
         const payload = { long_url: longUrl };
         if (customAlias) payload.custom_alias = customAlias;
 
-        // Try backend first
+        // Try backend first with a short timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 2000);
+        
         const res = await fetch('/api/create', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
+          body: JSON.stringify(payload),
+          signal: controller.signal
         });
 
+        clearTimeout(timeoutId);
         const data = await res.json().catch(()=>({}));
 
         if (res.ok) {
@@ -188,8 +193,8 @@
           shortUrlText.select();
           isStaticMode = false;
         } else {
-          const msg = (data && data.error) ? data.error : (`Request failed (${res.status})`);
-          showError(msg);
+          // Backend returned an error, try static mode
+          throw new Error('Backend unavailable');
         }
       } catch (err) {
         // Backend not available, use static mode
