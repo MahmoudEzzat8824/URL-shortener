@@ -135,8 +135,21 @@
       }
 
       const shortId = customAlias || simpleHash(longUrl);
-      const baseUrl = window.location.origin + window.location.pathname.replace('index.html', '');
-      const shortUrl = `${baseUrl}${shortId}`;
+      
+      // For GitHub Pages: use git.io style short domain or just the short ID
+      // Create a minimal short URL format
+      const hostname = window.location.hostname;
+      const isGitHubPages = hostname.includes('github.io');
+      
+      let shortUrl;
+      if (isGitHubPages) {
+        // Extract just the username for a shorter display
+        const username = hostname.split('.')[0];
+        shortUrl = `${username}.io/${shortId}`;
+      } else {
+        // For local: use localhost:port/shortId
+        shortUrl = `${window.location.host}/${shortId}`;
+      }
       
       saveUrlMapping(shortId, longUrl);
       return shortUrl;
